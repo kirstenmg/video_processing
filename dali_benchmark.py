@@ -2,6 +2,16 @@ from nvidia.dali import pipeline_def
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
 
+
+"""Constants"""
+BATCH_SIZE = 4
+NUM_THREADS = 3
+
+sequence_length=16
+stride=2
+step=(sequence_length * stride) // 2
+
+""""Set up dataloader"""
 def dali_transform(frames):
     frames = fn.crop_mirror_normalize(
         frames,
@@ -14,14 +24,15 @@ def dali_transform(frames):
     )
     return frames
 
+resize_kwargs=dict(resize_shorter=128)
+
 @pipeline_def
 def create_pipeline():
     frames, label, timestamp = fn.readers.video_resize(
-        device=device,
         **resize_kwargs,
-        sequence_length=sequence_length,
-        stride=stride,
-        step=step,
+        sequence_length=sequence_length, # Frames to load per sequence
+        stride=stride, # Distance between consecutive frames
+        step=step, # Frame interval between each sequence
         normalized=normalized,
         random_shuffle=False,
         image_type=types.RGB,
@@ -39,19 +50,11 @@ def create_pipeline():
 
     return frames, label, timestamp
 
-    # Add args batch_size, num_threads, device_id for @pipeline_def
-    logging.debug(f'Creating dali pipeline with batch_size={batch_size}, num_threads={num_threads}')
-    pipeline = create_pipeline(batch_size=batch_size, num_threads=num_threads, device_id=0)
-    pipeline.build()
-    return pipeline
-resize_kwargs=dict(
-                resize_shorter=128
-            )
+pipeline = create_pipeline(batch_size=BATCH_SIZE, num_threads=NUM_THREADS, device_id=0)
+pipeline.build()
 
-sequence_length=16,
-            stride=2,
-            step=(sequence_length * stride) // 2
-
+"""
+"""
 
 device='gpu'
 normalized=False

@@ -10,15 +10,17 @@ from torchvision.transforms._transforms_video import (
     CenterCropVideo,
     NormalizeVideo,
 )
-from torch.utils.data.dataloader import default_collate
+from torch.profiler import profile, ProfilerActivity, tensorboard_trace_handler
 
 """ Constants """
 ANNOTATION_FILE_PATH = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
 VIDEO_BASE_PATH = "/home/maureen/kinetics/kinetics400"
+LOG_DIR = "profiler_logs"
+EXPERIMENT_DIR = "pytorch_slowr50_test"
 BATCH_SIZE = 4
 CROP_SIZE = 256
 CLIP_DURATION = 10 # seconds
-NUM_WORKERS = 3
+NUM_WORKERS = 4
 device="cuda"
 
 """ Set up dataloader """
@@ -83,11 +85,13 @@ model = model.eval()
 """ Train """
 # Pass the input clip through the model
 dataloader = iter(dataloader)
-while True:
-    try:
-        batch = next(dataloader)
+
+with profile(
+    record_shapes=False,
+    on_trace_ready=tensorboard_trace_handler(f'{LOG_DIR}/{EXPERIMENT_DIR}')
+) as prof:
+    for batch in dataloader:
         inputs = batch["video"].to(device)
-        print(batch["name"])
         preds = model(inputs)
 
         # Get the predicted classes
@@ -96,10 +100,4 @@ while True:
         pred_classes = preds.topk(k=5).indices
 
         # Map the predicted classes to the label names
-        print(pred_classes)
-
-    except StopIteration:
-        break
-    except Exception as e:
-        print(e)
-        continue
+        prof.step()
