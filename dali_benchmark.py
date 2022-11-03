@@ -1,7 +1,7 @@
 from nvidia.dali import pipeline_def
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
-
+from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
 
 """Constants"""
 BATCH_SIZE = 4
@@ -10,6 +10,21 @@ NUM_THREADS = 3
 sequence_length=16
 stride=2
 step=(sequence_length * stride) // 2
+device='gpu'
+normalized=False
+
+""" File paths """
+ANNOTATION_FILE_PATH = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
+VIDEO_BASE_PATH = "/home/maureen/kinetics/kinetics400"
+video_paths = []
+with open(ANNOTATION_FILE_PATH, 'r') as annotation_file:
+    for i, line in enumerate(annotation_file):
+        if i != 0: # skip column headers
+            line = annotation_file.readline()
+            label, youtube_id, time_start, time_end, split, is_cc = line.strip().split(',')
+            vpath = f'{VIDEO_BASE_PATH}/{split}/{youtube_id}_{int(time_start):06d}_{int(time_end):06d}.mp4'
+            video_paths.append((vpath, {"name": vpath}))
+
 
 """"Set up dataloader"""
 def dali_transform(frames):
@@ -30,6 +45,7 @@ resize_kwargs=dict(resize_shorter=128)
 def create_pipeline():
     frames, label, timestamp = fn.readers.video_resize(
         **resize_kwargs,
+        device=device,
         sequence_length=sequence_length, # Frames to load per sequence
         stride=stride, # Distance between consecutive frames
         step=step, # Frame interval between each sequence
@@ -42,8 +58,9 @@ def create_pipeline():
         dont_use_mmap=True,
         skip_vfr_check=True,
         enable_timestamps=True,
-        filenames=files,
-        labels=vids,
+        # filenames=video_paths,
+        file_root="/home/maureen/kinetics400/val/",
+        labels=[],
         name='reader',
     )
     frames = dali_transform(frames)
@@ -56,12 +73,10 @@ pipeline.build()
 """
 """
 
-device='gpu'
-normalized=False
 
-video_iterator = dali_pytorch.DALIGenericIterator(
-            built_pipeline,
+video_iterator = DALIGenericIterator(
+            pipeline,
             ['frames', 'vid', 'frame_timestamp'],
-            last_batch_policy=dali_pytorch.LastBatchPolicy.PARTIAL,
+            last_batch_policy=LastBatchPolicy.PARTIAL,
             reader_name='reader'
         )

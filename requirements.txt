@@ -1,1 +1,2 @@
 pytorchvideo==0.1.5
+torch_tb_profiler
