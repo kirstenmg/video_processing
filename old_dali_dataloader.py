@@ -2,40 +2,30 @@ from nvidia.dali import pipeline_def
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
 from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
-from dataloader import DataLoader
-from typing import List, Dict
 
-
-"""
-    Constants
-"""
-# Clip sampling
+"""Constants"""
 sequence_length=16
 stride=2
 step=27 # to match fps and give us 10 clips per video
 device='gpu'
 normalized=False
 
-# Video paths
+
+""" File paths """
 ANNOTATION_FILE_PATH = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
 VIDEO_BASE_PATH = "/home/maureen/kinetics/kinetics400"
+video_paths = []
+with open(ANNOTATION_FILE_PATH, 'r') as annotation_file:
+    for i, line in enumerate(annotation_file):
+        if i != 0: # skip column headers
+            line = annotation_file.readline()
+            label, youtube_id, time_start, time_end, split, is_cc = line.strip().split(',')
+            vpath = f'{VIDEO_BASE_PATH}/{split}/{youtube_id}_{int(time_start):06d}_{int(time_end):06d}.mp4'
+            video_paths.append(vpath)
 
-# Transform
+""""Set up dataloader"""
 mean = [0.45, 0.45, 0.45]
 std = [0.225, 0.225, 0.225]
-resize_kwargs=dict(resize_shorter=256)
-
-def get_paths(annotation_path, video_path) -> List[str]:
-    video_paths = []
-    with open(annotation_path, 'r') as annotation_file:
-        for i, line in enumerate(annotation_file):
-            if i != 0: # skip column headers
-                line = annotation_file.readline()
-                label, youtube_id, time_start, time_end, split, is_cc = line.strip().split(',')
-                vpath = f'{video_path}/{split}/{youtube_id}_{int(time_start):06d}_{int(time_end):06d}.mp4'
-                video_paths.append(vpath)
-    return video_paths
-
 def dali_transform(frames):
     frames = fn.crop_mirror_normalize(
         frames,
@@ -48,9 +38,10 @@ def dali_transform(frames):
     )
     return frames
 
+
+resize_kwargs=dict(resize_shorter=256)
 @pipeline_def
 def create_pipeline():
-    video_paths: List[str] = get_paths(ANNOTATION_FILE_PATH, VIDEO_BASE_PATH)
     frames, label, timestamp = fn.readers.video_resize(
         **resize_kwargs,
         device=device,
@@ -74,26 +65,15 @@ def create_pipeline():
 
     return frames, label, timestamp
 
+def get_dataloader(batch_size, num_threads):
+    pipeline = create_pipeline(batch_size=batch_size, num_threads=num_threads, device_id=0)
+    pipeline.build()
 
+    return DALIGenericIterator(
+        pipeline,
+        ['frames', 'vid', 'frame_timestamp'],
+        last_batch_policy=LastBatchPolicy.PARTIAL,
+        reader_name='reader'
+    )
 
-class DaliDataLoader(DataLoader):
-    # TODO: enable iteration
-
-    def __init__(self, batch_size: int, num_threads: int):
-        # TODO: consider adding more parameters rather than hardcoding a bunch
-        # of constants
-        pipeline = create_pipeline(batch_size=batch_size, num_threads=num_threads, device_id=0)
-        pipeline.build()
-        
-        dali_iter = DALIGenericIterator(
-            pipeline,
-            ['frames', 'vid', 'frame_timestamp'],
-            last_batch_policy=LastBatchPolicy.PARTIAL,
-            reader_name='reader'
-        )
-
-        self._iterator = iter(dali_iter)
-
-    def next_batch(self):
-        batch = next(self._iterator, [None])
-        return batch[0]
+get_input = lambda batch: batch[0]["frames"]

@@ -1,11 +1,10 @@
 import torch
 import datetime
-from torch.profiler import profile, ProfilerActivity, tensorboard_trace_handler
+from torch.profiler import profile, tensorboard_trace_handler
 import time
 import numpy as np
-import dali_dataloader
-import pytorch_dataloader
-
+from dali_dataloader import DaliDataLoader
+from combo_dataloader import ComboDataLoader
 
 LOG_DIR = "profiler_logs"
 
@@ -20,7 +19,7 @@ model = model.eval()
 
 """ Train """
 # Pass the input clip through the model
-def run_experiment(dataloader, batch_to_input, iteration, batch_size, num_threads):
+def run_experiment(dataloader, iteration, batch_size, num_threads):
     # Create dataloader from dataset
     now = str(datetime.datetime.now()).replace(" ", "_")
     EXPERIMENT_DIR = f'pytorch_slowr50_{now}_batch{batch_size}_threads{num_threads}_{iteration}'
@@ -34,7 +33,7 @@ def run_experiment(dataloader, batch_to_input, iteration, batch_size, num_thread
         clips = 0
         for batch in dataloader:
             clips += batch_size
-            inputs = batch_to_input(batch)
+            inputs = batch["frames"]
             preds = model(inputs)
 
             # Get the predicted classes
@@ -49,12 +48,11 @@ def run_experiment(dataloader, batch_to_input, iteration, batch_size, num_thread
         return clock_time, process_time, clips
 
 trials = []
-for iteration in range(4):  #(4):
-    for batch_size in [1, 3, 5, 6, 7, 8]: #[3, 4, 5, 6, 7, 8]:
-        for num_workers in [1, 3, 5, 6, 7, 8, 9, 10]:
+for iteration in range(1):
+    for batch_size in [1]: #[3, 4, 5, 6, 7, 8]:
+        for num_workers in [2]:#, 3, 5, 6, 7, 8, 9, 10]:
             clock_time, process_time, clips = run_experiment(
-              dali_dataloader.get_dataloader(batch_size, num_workers),
-              dali_dataloader.get_input,
+              ComboDataLoader([DaliDataLoader(batch_size=batch_size, num_threads=num_workers)]),
               iteration,
               batch_size,
               num_workers
@@ -62,15 +60,6 @@ for iteration in range(4):  #(4):
             trial = ["dali", iteration, batch_size, num_workers, clock_time, process_time, clips]
             print(trial)
             trials.append(trial)
-
-            clock_time, process_time, clips = run_experiment(
-              pytorch_dataloader.get_dataloader(batch_size, num_workers),
-              pytorch_dataloader.get_input,
-              iteration, batch_size, num_workers)
-            trial = ["pytorch", iteration, batch_size, num_workers, clock_time, process_time, clips]
-            print(trial)
-            trials.append(trial)
-            
 
 commas = [",".join([str(el) for el in row]) for row in trials]
 output = "\n".join(commas)
