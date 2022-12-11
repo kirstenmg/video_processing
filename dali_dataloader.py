@@ -94,6 +94,6 @@ class DaliDataLoader(DataLoader):
 
         self._iterator = iter(dali_iter)
 
-    def next_batch(self):
-        batch = next(self._iterator, [None])
+    def __next__(self):
+        batch = next(self._iterator)
         return batch[0]
