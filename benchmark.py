@@ -2,11 +2,22 @@ import torch
 import datetime
 from torch.profiler import profile, tensorboard_trace_handler
 import time
-import numpy as np
-from dali_dataloader import DaliDataLoader
-from combo_dataloader import ComboDataLoader
+from combo_dataloader import ComboDataLoader, DataLoaderType
 
 LOG_DIR = "profiler_logs"
+
+""" Set up video paths """
+# Get video paths from annotation CSV
+ANNOTATION_FILE_PATH = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
+VIDEO_BASE_PATH = "/home/maureen/kinetics/kinetics400"
+video_paths = []
+with open(ANNOTATION_FILE_PATH, 'r') as annotation_file:
+    for i, line in enumerate(annotation_file):
+        if i != 0: # skip column headers
+            line = annotation_file.readline()
+            label, youtube_id, time_start, time_end, split, is_cc = line.strip().split(',')
+            vpath = f'{VIDEO_BASE_PATH}/{split}/{youtube_id}_{int(time_start):06d}_{int(time_end):06d}.mp4'
+            video_paths.append(vpath)
 
 """ Train """
 # Pass the input clip through the model
@@ -49,19 +60,27 @@ def run_experiment(dataloader, iteration, batch_size, num_threads):
         return clock_time, process_time, clips
 
 if __name__ == '__main__':
+    trial_setup = [
+        ([DataLoaderType.DALI], "dali"),
+        ([DataLoaderType.PYTORCH], "pytorch"),
+        ([DataLoaderType.DALI, DataLoaderType.PYTORCH], "dali_pytorch"),
+    ]
+
     trials = []
     for iteration in range(1):
         for batch_size in [8]: #[3, 4, 5, 6, 7, 8]:
             for num_workers in [2]:#, 3, 5, 6, 7, 8, 9, 10]:
-                clock_time, process_time, clips = run_experiment(
-                    ComboDataLoader([DaliDataLoader(batch_size=batch_size, num_threads=num_workers)]),
-                    iteration,
-                    batch_size,
-                    num_workers
-                )
-                trial = ["dali", iteration, batch_size, num_workers, clock_time, process_time, clips]
-                print(trial)
-                trials.append(trial)
+                for dl_list, str_desc in trial_setup:
+                    combo_dl = ComboDataLoader(dl_list, video_paths)
+                    clock_time, process_time, clips = run_experiment(
+                        combo_dl,
+                        iteration,
+                        batch_size,
+                        num_workers
+                    )
+                    trial = [str_desc, iteration, batch_size, num_workers, clock_time, process_time, clips]
+                    print(trial)
+                    trials.append(trial)
 
     commas = [",".join([str(el) for el in row]) for row in trials]
     output = "\n".join(commas)

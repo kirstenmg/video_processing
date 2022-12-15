@@ -16,25 +16,10 @@ step=27 # to match fps and give us 10 clips per video
 device='gpu'
 normalized=False
 
-# Video paths
-ANNOTATION_FILE_PATH = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
-VIDEO_BASE_PATH = "/home/maureen/kinetics/kinetics400"
-
 # Transform
 mean = [0.45, 0.45, 0.45]
 std = [0.225, 0.225, 0.225]
 resize_kwargs=dict(resize_shorter=256)
-
-def get_paths(annotation_path, video_path) -> List[str]:
-    video_paths = []
-    with open(annotation_path, 'r') as annotation_file:
-        for i, line in enumerate(annotation_file):
-            if i != 0: # skip column headers
-                line = annotation_file.readline()
-                label, youtube_id, time_start, time_end, split, is_cc = line.strip().split(',')
-                vpath = f'{video_path}/{split}/{youtube_id}_{int(time_start):06d}_{int(time_end):06d}.mp4'
-                video_paths.append(vpath)
-    return video_paths
 
 def dali_transform(frames):
     frames = fn.crop_mirror_normalize(
@@ -49,8 +34,8 @@ def dali_transform(frames):
     return frames
 
 @pipeline_def
-def create_pipeline():
-    video_paths: List[str] = get_paths(ANNOTATION_FILE_PATH, VIDEO_BASE_PATH)
+def create_pipeline(video_paths: List[str]):
+    # TODO: use passed-in paths rather than hardcoding within this file
     frames, label, timestamp = fn.readers.video_resize(
         **resize_kwargs,
         device=device,
@@ -77,12 +62,10 @@ def create_pipeline():
 
 
 class DaliDataLoader(DataLoader):
-    # TODO: enable iteration
-
-    def __init__(self, batch_size: int, num_threads: int):
+    def __init__(self, batch_size: int, num_threads: int, video_paths: List[str]):
         # TODO: consider adding more parameters rather than hardcoding a bunch
         # of constants
-        pipeline = create_pipeline(batch_size=batch_size, num_threads=num_threads, device_id=0)
+        pipeline = create_pipeline(video_paths=video_paths, batch_size=batch_size, num_threads=num_threads, device_id=0)
         pipeline.build()
         
         dali_iter = DALIGenericIterator(
