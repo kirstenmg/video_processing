@@ -7,7 +7,7 @@ from collections import namedtuple
 from dataloader import DataLoader
 from dali_dataloader import DaliDataLoader
 from pytorch_dataloader import PytorchDataloader
-from torch import multiprocessing
+from torch import multiprocessing, cuda
 import enum
 import atexit
 
@@ -26,6 +26,7 @@ def populate_queue(
         shutdown_event,
         
     ) -> None:
+
     if dataloader == DataLoaderType.DALI:
         dl = DaliDataLoader(8, 10, video_paths)
     elif dataloader == DataLoaderType.PYTORCH:
@@ -41,8 +42,9 @@ def populate_queue(
     # Block until shutdown
     # If some error occurs in the main process, I think this will block infinitely
     # TODO: add atexit.shutdown, maybe this will solve the issue
-    if dataloader == DataLoaderType.DALI:
-        lock.acquire()
+    #if dataloader == DataLoaderType.DALI:
+    lock.acquire()
+    lock.release()
 
 
 class ComboDataLoader(DataLoader):
@@ -110,7 +112,11 @@ class ComboDataLoader(DataLoader):
 
         return next_item
 
+    def __del__(self):
+        print("deletion")
+
     def shutdown(self):
         print("in here")
         self._shutdown_event.set()
+        self._lock.release()
 

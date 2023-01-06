@@ -15,7 +15,7 @@ with open(ANNOTATION_FILE_PATH, 'r') as annotation_file:
             video_paths.append(vpath)
 
 def main():
-	combo_dl = ComboDataLoader([DataLoaderType.DALI], video_paths=video_paths)
+	combo_dl = ComboDataLoader([DataLoaderType.PYTORCH, DataLoaderType.PYTORCH], video_paths=video_paths)
 	count = 0
 	for batch in combo_dl:
 		count += 1
