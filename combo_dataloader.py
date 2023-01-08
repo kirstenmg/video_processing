@@ -112,11 +112,8 @@ class ComboDataLoader(DataLoader):
 
         return next_item
 
-    def __del__(self):
-        print("deletion")
-
     def shutdown(self):
-        print("in here")
-        self._shutdown_event.set()
-        self._lock.release()
+        if not self._shutdown_event.is_set():
+            self._shutdown_event.set()
+            self._lock.release()
 

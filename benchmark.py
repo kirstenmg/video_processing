@@ -24,9 +24,7 @@ def run_experiment(dataloader, iteration, batch_size, num_threads):
     perf_start = time.perf_counter()
     proc_start = time.process_time()
     clips = 0
-    print("beginning experiment")
     for i, batch in enumerate(dataloader):
-        print(i)
         clips += batch_size
         inputs = batch["frames"]
 
@@ -59,13 +57,14 @@ if __name__ == '__main__':
     #video_paths = video_paths[:10]
 
     trial_setup = [
-        ([DataLoaderType.PYTORCH, DataLoaderType.PYTORCH], "pytorch"),
-        #([DataLoaderType.DALI, DataLoaderType.DALI], "dali"),
-        #([DataLoaderType.PYTORCH, DataLoaderType.DALI], "dali_pytorch"),
+        ([DataLoaderType.PYTORCH], "pytorch"),
+        ([DataLoaderType.DALI], "dali"),
+        ([DataLoaderType.DALI, DataLoaderType.DALI], "dali_dali"),
+        ([DataLoaderType.PYTORCH, DataLoaderType.DALI], "dali_pytorch"),
     ]
 
     trials = []
-    for iteration in range(1):
+    for iteration in range(3):
         for batch_size in [8]: #[3, 4, 5, 6, 7, 8]:
             for num_workers in [2]:#, 3, 5, 6, 7, 8, 9, 10]:
                 for dl_list, str_desc in trial_setup:
@@ -76,6 +75,7 @@ if __name__ == '__main__':
                         batch_size,
                         num_workers
                     )
+                    combo_dl.shutdown()
                     trial = [str_desc, iteration, batch_size, num_workers, clock_time, process_time, clips]
                     print(trial)
                     trials.append(trial)
