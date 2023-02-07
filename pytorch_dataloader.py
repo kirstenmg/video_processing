@@ -11,11 +11,13 @@ from pytorchvideo.transforms import (
 )
 
 """ Constants """
-frames_per_second = 30
+fps = 27 # due to variation in fps in dataset
+clip_duration = 32 / fps # 30 fps, we want 32 frames per clip, so 32/30 seconds
+stride = 32 / fps # seconds to offset next clip by; 24/30 to match dali setup
+
 LOG_DIR = "profiler_logs"
 CROP_SIZE = 256
-CLIP_DURATION = 32 / 30 # 30 fps, we want 32 frames per clip, so 32/30 seconds
-CLIPS_PER_VIDEO = 10
+
 device="cuda"
 
 # Set up transform
@@ -48,9 +50,9 @@ class PytorchDataloader(DataLoader):
         dataset = pytorchvideo.data.LabeledVideoDataset(
             labeled_video_paths=reformatted_video_paths,
             clip_sampler=pytorchvideo.data.make_clip_sampler(
-                "constant_clips_per_video",
-                CLIP_DURATION,
-                CLIPS_PER_VIDEO
+                "uniform",
+                clip_duration,
+                stride,
                 ),
             video_sampler=torch.utils.data.SequentialSampler,
             transform=transform,

@@ -1,90 +1,107 @@
 import torch
-import datetime
-from torch.profiler import profile, tensorboard_trace_handler
 import time
 from combo_dataloader import ComboDataLoader, DataLoaderType
+from multiprocessing import Process, Queue
+import duckdb_wrapper
+import torchvision
 
-LOG_DIR = "profiler_logs"
-""" Train """
-# Pass the input clip through the model
-def run_experiment(dataloader, iteration, batch_size, num_threads):
-    """ Set up pretrained model """
-    model_name = "slow_r50"
-    model = torch.hub.load("facebookresearch/pytorchvideo", model=model_name, pretrained=True)
 
-    # Set to eval mode and move to desired device
-    device = "cuda"
-    model = model.to(device)
-    model = model.eval()
+DB_BENCHMARK = False
 
-    # Create dataloader from dataset
-    now = str(datetime.datetime.now()).replace(" ", "_")
-    EXPERIMENT_DIR = f'pytorch_slowr50_{now}_batch{batch_size}_threads{num_threads}_{iteration}'
-
-    perf_start = time.perf_counter()
-    proc_start = time.process_time()
-    clips = 0
-    for i, batch in enumerate(dataloader):
-        clips += batch_size
-        inputs = batch["frames"]
-
-        # Get the predicted classes
-        time.sleep(0.1)
-        with torch.inference_mode():
-            preds = model(inputs)
-            post_act = torch.nn.Softmax(dim=1)
-            preds = post_act(preds)
-            pred_classes = preds.topk(k=5).indices
-
-    clock_time = time.perf_counter() - perf_start
-    process_time = time.process_time() - proc_start
-    return clock_time, process_time, clips
-
-if __name__ == '__main__':
-    """ Set up video paths """
+def main():
     # Get video paths from annotation CSV
-    ANNOTATION_FILE_PATH = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
-    VIDEO_BASE_PATH = "/home/maureen/kinetics/kinetics400"
+    annotation_file_path = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
+    video_base_path = "/home/maureen/kinetics/kinetics400"
     video_paths = []
-    with open(ANNOTATION_FILE_PATH, 'r') as annotation_file:
+    with open(annotation_file_path, 'r') as annotation_file:
         for i, line in enumerate(annotation_file):
             if i != 0: # skip column headers
                 line = annotation_file.readline()
                 label, youtube_id, time_start, time_end, split, is_cc = line.strip().split(',')
-                vpath = f'{VIDEO_BASE_PATH}/{split}/{youtube_id}_{int(time_start):06d}_{int(time_end):06d}.mp4'
+                vpath = f'{video_base_path}/{split}/{youtube_id}_{int(time_start):06d}_{int(time_end):06d}.mp4'
                 video_paths.append(vpath)
 
-    #video_paths = video_paths[:10]
+    video_paths += video_paths
 
-    trial_setup = [
-        ([DataLoaderType.PYTORCH], "pytorch"),
-        ([DataLoaderType.DALI], "dali"),
-        ([DataLoaderType.DALI, DataLoaderType.DALI], "dali_dali"),
-        ([DataLoaderType.PYTORCH, DataLoaderType.DALI], "dali_pytorch"),
-    ]
+    # Start background process to write results to database
+    ctx = torch.multiprocessing.get_context('spawn')
+    results_queue = ctx.Queue()
 
-    trials = []
+    print("enter a description of this benchmark")
+    experiment_description = input()
+
+    db_proc = Process(
+        target=duckdb_wrapper.write_results,
+        args=(
+            results_queue,
+            experiment_description,
+        ),
+    )
+    db_proc.start()
+
+    # Run trials
     for iteration in range(3):
-        for batch_size in [8]: #[3, 4, 5, 6, 7, 8]:
-            for num_workers in [2]:#, 3, 5, 6, 7, 8, 9, 10]:
-                for dl_list, str_desc in trial_setup:
-                    combo_dl = ComboDataLoader(dl_list, video_paths)
-                    clock_time, process_time, clips = run_experiment(
-                        combo_dl,
-                        iteration,
-                        batch_size,
-                        num_workers
-                    )
-                    combo_dl.shutdown()
-                    trial = [str_desc, iteration, batch_size, num_workers, clock_time, process_time, clips]
-                    print(trial)
-                    trials.append(trial)
+        for n in [0, 10, 20, 30, 32, 34, 36, 38, 40, 50, 60, 70, 80, 90, 100]:
+            queue_size = 50
+            pytorch = n
+            dali = 100-n
 
-    commas = [",".join([str(el) for el in row]) for row in trials]
-    output = "\n".join(commas)
-    print(output)
+            combo_dl = ComboDataLoader(
+                [DataLoaderType.PYTORCH, DataLoaderType.DALI],
+                video_paths,
+                [pytorch, dali],
+                queue_size,
+                results_queue,
+            )
+            clock_time, clips = run_trial(combo_dl)
+            combo_dl.shutdown()
+            result = duckdb_wrapper.ComboFullBenchmarkEntry(
+                iteration, pytorch, dali, clips, clock_time, queue_size
+            )
+            results_queue.put(result)
+            trial = [iteration, pytorch, dali, clock_time, clips]
+            print(trial)
 
-    now = str(datetime.datetime.now()).replace(" ", "_")
-    with open(f'benchmark_results/{now}.csv', 'w') as file:
-        file.write(output)
+    results_queue.put("done")
 
+
+def run_trial(dataloader):
+    """
+    Iterate once over the dataloader, applying the model on each batch.
+    Return: the total clock time and the total number of clips processed.
+    """
+
+    # Load model
+    model_name = "slow_r50"
+    model = torch.hub.load("facebookresearch/pytorchvideo", model=model_name, pretrained=True)
+
+    # Set to eval mode and move to GPU
+    model = model.to("cuda")
+    model = model.eval()
+
+    perf_start = time.perf_counter()
+    clips = 0
+
+    for i, batch in enumerate(dataloader):
+        # 8 batches, 3 channels, 16 frames, 256 size
+        inputs = batch["frames"]
+
+        clips += len(inputs)
+
+        with torch.inference_mode():
+            preds = model(inputs)
+
+    clock_time = time.perf_counter() - perf_start
+    return clock_time, clips
+
+def synthetic_data(n):
+    count = 0
+    while count < n:
+        yield {
+            "frames":
+            torch.cuda.FloatTensor(8, 3, 16, 256, 256).normal_()
+        }
+        count += 1
+
+if __name__ == '__main__':
+    main()

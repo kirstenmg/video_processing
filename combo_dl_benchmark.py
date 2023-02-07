@@ -1,6 +1,8 @@
 from combo_dataloader import ComboDataLoader, DataLoaderType
 from dali_dataloader import DaliDataLoader
 import time
+from duckdb_wrapper import con
+import datetime
 
 # Get video paths from annotation CSV
 ANNOTATION_FILE_PATH = "/home/maureen/kinetics/kinetics400/annotations/val.csv"
@@ -15,15 +17,16 @@ with open(ANNOTATION_FILE_PATH, 'r') as annotation_file:
             video_paths.append(vpath)
 
 def main():
-	combo_dl = ComboDataLoader([DataLoaderType.PYTORCH, DataLoaderType.PYTORCH], video_paths=video_paths)
-	count = 0
-	for batch in combo_dl:
-		count += 1
 
-	print("batch done")
-
-
+  con.execute("CREATE TABLE combo_full_benchmark (exp_time TIMESTAMP references experiment(time), iteration INTEGER, pytorch_portion INTEGER, dali_portion INTEGER, clip_count INTEGER, clock_time FLOAT)")
+  """
+  count = 0
+  for batch in combo_dl:
+    inputs = batch["frames"]
+    count += len(inputs)
+  print(count)
+  """
 
 if __name__ == "__main__":
-	
-	main()
+  
+  main()

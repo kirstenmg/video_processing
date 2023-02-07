@@ -10,9 +10,10 @@ from typing import List, Dict
     Constants
 """
 # Clip sampling
-sequence_length=16
-stride=2
-step=27 # to match fps and give us 10 clips per video
+sequence_length=16 # frames per sequence
+stride=2 # distance between consecutive frames in the sequence, default 1
+step=32 # frame interval between each sequence to match fps and give us 10 clips per video, on average
+# 30 fps = 300 fpvideo
 device='gpu'
 normalized=False
 

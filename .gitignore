@@ -1,3 +1,7 @@
 .ipynb_checkpoints
 __pycache__
 profiler_logs
+benchmark_results
+.vscode
+*.duckdb
+*.duckdb.wal
