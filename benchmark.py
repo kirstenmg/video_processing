@@ -40,12 +40,13 @@ def main():
     db_proc.start()
 
     # Run trials
-    for iteration in range(3):
-        for n in [0, 10, 20, 30, 32, 34, 36, 38, 40, 50, 60, 70, 80, 90, 100]:
+    for iteration in range(5):
+        for n in [*range(0, 110, 10), *range(31, 39, 2)]:
             queue_size = 50
             pytorch = n
             dali = 100-n
 
+            #combo_dl = synthetic_data(96)
             combo_dl = ComboDataLoader(
                 [DataLoaderType.PYTORCH, DataLoaderType.DALI],
                 video_paths,
@@ -72,8 +73,9 @@ def run_trial(dataloader):
     """
 
     # Load model
-    model_name = "slow_r50"
-    model = torch.hub.load("facebookresearch/pytorchvideo", model=model_name, pretrained=True)
+    #model_name = "slow_r50"
+    #model = torch.hub.load("facebookresearch/pytorchvideo", model=model_name, pretrained=True)
+    model = torchvision.models.video.r3d_18()
 
     # Set to eval mode and move to GPU
     model = model.to("cuda")
@@ -99,7 +101,7 @@ def synthetic_data(n):
     while count < n:
         yield {
             "frames":
-            torch.cuda.FloatTensor(8, 3, 16, 256, 256).normal_()
+            torch.cuda.FloatTensor(8, 3, 16, 112, 112).normal_()
         }
         count += 1
 

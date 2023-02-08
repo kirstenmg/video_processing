@@ -15,16 +15,13 @@ fps = 27 # due to variation in fps in dataset
 clip_duration = 32 / fps # 30 fps, we want 32 frames per clip, so 32/30 seconds
 stride = 32 / fps # seconds to offset next clip by; 24/30 to match dali setup
 
-LOG_DIR = "profiler_logs"
-CROP_SIZE = 256
-
 device="cuda"
 
 # Set up transform
-side_size = 256
-mean = [0.45, 0.45, 0.45]
-std = [0.225, 0.225, 0.225]
-crop_size = 256
+side_size = 128
+mean=[0.43216, 0.394666, 0.37645]
+std=[0.22803 , 0.22145 , 0.216989 ]
+crop_size = 112
 num_frames = 16
 sampling_rate = 8
 

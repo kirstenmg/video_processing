@@ -20,23 +20,22 @@ normalized=False
 # Transform
 mean = [0.45, 0.45, 0.45]
 std = [0.225, 0.225, 0.225]
-resize_kwargs=dict(resize_shorter=256)
+resize_kwargs=dict(resize_shorter=128)
 
 def dali_transform(frames):
     frames = fn.crop_mirror_normalize(
         frames,
         dtype=types.FLOAT,
         output_layout="CFHW",
-        crop=(256, 256),
-        mean=[m * 255 for m in mean],
-        std=[s * 255 for s in std],
+        crop=(112, 112),
+        mean=[0.43216 * 255, 0.394666 * 255, 0.37645 * 255],
+        std=[0.22803 * 255, 0.22145 * 255, 0.216989 * 255],
         mirror=False
     )
     return frames
 
 @pipeline_def
 def create_pipeline(video_paths: List[str]):
-    # TODO: use passed-in paths rather than hardcoding within this file
     frames, label, timestamp = fn.readers.video_resize(
         **resize_kwargs,
         device=device,
