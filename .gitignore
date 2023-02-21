@@ -5,3 +5,4 @@ benchmark_results
 .vscode
 *.duckdb
 *.duckdb.wal
+*.egg-info
