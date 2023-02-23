@@ -7,7 +7,7 @@ from pytorchvideo.transforms import (
     UniformTemporalSubsample,
     Normalize
 )
-from .dataloader import DataLoader, DataLoaderParams
+from ._dataloader import DataLoader, DataLoaderParams
 
 """ Constants """
 fps = 27 # due to variation in fps in dataset
@@ -61,6 +61,7 @@ class PytorchDataloader(DataLoader):
             video_sampler=torch.utils.data.SequentialSampler,
             transform=dataset_transform,
             decode_audio=False,
+            decoder="decord",
             **params.pytorch_dataset_kwargs
         )
 

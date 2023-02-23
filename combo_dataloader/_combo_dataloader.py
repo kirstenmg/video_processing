@@ -7,10 +7,10 @@ from collections import namedtuple
 from torch import multiprocessing
 import enum
 import atexit
-from .dataloader import DataLoader, DataLoaderParams
-from .transform import ComboDLTransform
-from .dali_dataloader import DaliDataLoader
-from .pytorch_dataloader import PytorchDataloader
+from ._dataloader import DataLoader, DataLoaderParams
+from ._transform import ComboDLTransform
+from ._dali_dataloader import DaliDataLoader
+from ._pytorch_dataloader import PytorchDataloader
 
 
 # Maximum size of producer/consumer queue of batches
@@ -83,7 +83,7 @@ class ComboDataLoader(DataLoader):
         """
 
         if len(dataloaders) != len(dataloader_portions) or len([num for num in dataloader_portions if num < 0]) > 0 or sum(dataloader_portions) == 0:
-            raise ValueError(f'Dataloader portions (count {len(dataloader_portions)})' +\
+            raise ValueError(f'Dataloader portions (count {len(dataloader_portions)}, sum {sum(dataloader_portions)})' +\
             f' must be positive and map 1:1 to dataloaders (count {len(dataloader_portions)})')
 
         if labels and len(labels) != len(video_paths):
@@ -136,13 +136,13 @@ class ComboDataLoader(DataLoader):
                     self._lock,
                     self._shutdown_event,
                     DataLoaderParams(
-                        video_paths=video_paths,
+                        video_paths=video_paths[video_range.start:video_range.end],
                         sequence_length=sequence_length,
                         fps=fps,
                         stride=stride,
                         step=step,
                         batch_size=batch_size,
-                        labels=labels,
+                        labels=labels if not labels else labels[video_range.start:video_range.end],
                         transform=transform,
                         pytorch_dataloader_kwargs=pytorch_dataloader_kwargs,
                         pytorch_dataset_kwargs=pytorch_dataset_kwargs,

@@ -2,7 +2,7 @@ from nvidia.dali import pipeline_def
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
 from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
-from .dataloader import DataLoader, DataLoaderParams
+from ._dataloader import DataLoader, DataLoaderParams
 
 
 """

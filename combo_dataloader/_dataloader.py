@@ -5,8 +5,8 @@ the data, and provides the pixel input in batches to a model.
 
 from abc import ABC
 from dataclasses import dataclass
-from typing import Dict, List, Any, Callable
-from .transform import ComboDLTransform
+from typing import Dict, List, Any, Callable, Optional
+from ._transform import ComboDLTransform
 
 @dataclass
 class DataLoaderParams:
@@ -16,14 +16,14 @@ class DataLoaderParams:
     stride: int
     step: int
     batch_size: int
-    labels: List[int]
-    transform: ComboDLTransform
+    labels: Optional[List[int]]
+    transform: Optional[ComboDLTransform]
     pytorch_dataloader_kwargs: Dict[str, Any]
     pytorch_dataset_kwargs: Dict[str, Any]
-    pytorch_additional_transform: Callable
+    pytorch_additional_transform: Optional[Callable]
     dali_pipeline_kwargs: Dict[str, Any]
     dali_reader_kwargs: Dict[str, Any]
-    dali_additional_transform: Callable
+    dali_additional_transform: Optional[Callable]
 
 class DataLoader(ABC):
     def __iter__(self):
