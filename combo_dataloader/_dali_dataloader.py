@@ -15,8 +15,12 @@ normalized=False
 
 @pipeline_def
 def create_pipeline(params: DataLoaderParams):
+    resize_args = dict()
+    if params.transform.short_side_scale:
+        resize_args["resize_shorter"] = params.transform.short_side_scale
+
     frames, label, timestamp = fn.readers.video_resize(
-        resize_shorter=params.transform.short_side_scale,
+        **resize_args,
         device=device,
         sequence_length=params.sequence_length, # Frames to load per sequence
         stride=params.stride, # Distance between consecutive frames
@@ -36,22 +40,26 @@ def create_pipeline(params: DataLoaderParams):
         **params.dali_reader_kwargs,
     )
 
-    if type(params.transform.crop) == int:
-        # Create a square from given crop value, since only a single value given
-        params.transform.crop = (params.transform.crop, params.transform.crop)
+    crop_args = dict()
+    if params.transform.crop:
+        if type(params.transform.crop) == int:
+          # Create a square from given crop value, since only a single value given
+          crop_args["crop"] = (params.transform.crop, params.transform.crop)
+        else:
+          crop_args["crop"] = params.transform.crop
 
     frames = fn.crop_mirror_normalize(
         frames,
         dtype=types.FLOAT,
         output_layout="CFHW",
-        crop=params.transform.crop,
+        **crop_args,
         mean=params.transform.mean,
         std=params.transform.std,
         mirror=False
     )
  
     if params.dali_additional_transform:
-        params.dali_additional_transform(frames)
+        frames = params.dali_additional_transform(frames)
 
     return frames, label, timestamp
 

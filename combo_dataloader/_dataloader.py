@@ -17,7 +17,7 @@ class DataLoaderParams:
     step: int
     batch_size: int
     labels: Optional[List[int]]
-    transform: Optional[ComboDLTransform]
+    transform: ComboDLTransform
     pytorch_dataloader_kwargs: Dict[str, Any]
     pytorch_dataset_kwargs: Dict[str, Any]
     pytorch_additional_transform: Optional[Callable]

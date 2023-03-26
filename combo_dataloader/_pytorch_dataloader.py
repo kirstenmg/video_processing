@@ -9,16 +9,8 @@ from pytorchvideo.transforms import (
 )
 from ._dataloader import DataLoader, DataLoaderParams
 
-""" Constants """
-fps = 27 # due to variation in fps in dataset
-clip_duration = 32 / fps # 30 fps, we want 32 frames per clip, so 32/30 seconds
-stride = 32 / fps # seconds to offset next clip by; 24/30 to match dali setup
 
 device="cuda"
-
-# Set up transform
-num_frames = 16
-sampling_rate = 8
 
 class PytorchDataloader(DataLoader):
     def __init__(
@@ -30,25 +22,38 @@ class PytorchDataloader(DataLoader):
         if not params.pytorch_dataset_kwargs:
             params.pytorch_dataset_kwargs = dict()
 
-        # TODO: additional transform
+        transforms = []
+
+        if params.transform.short_side_scale and (params.pytorch_dataset_kwargs.get("decoder") != "decord" or \
+                params.pytorch_dataset_kwargs.get("width", -1) < 0 or \
+                params.pytorch_dataset_kwargs.get("height", -1) < 0):
+            # Resize was not pushed down
+            transforms.append(
+                ShortSideScale(
+                    size=params.transform.short_side_scale
+                )
+            )
+
+        transforms.extend([
+            UniformTemporalSubsample(params.sequence_length),
+            Normalize(params.transform.mean, params.transform.std),
+        ])
+
+        if params.transform.crop:
+            transforms.append(CenterCrop(params.transform.crop))
+
+        if params.pytorch_additional_transform:
+            transforms.append(params.pytorch_additional_transform)
+
         dataset_transform =  ApplyTransformToKey(
             key="video",
-            transform=Compose(
-                [
-                    UniformTemporalSubsample(params.sequence_length),
-                    Normalize(params.transform.mean, params.transform.std),
-                    ShortSideScale(
-                            size=params.transform.short_side_scale
-                    ),
-                    CenterCrop(params.transform.crop)
-                ]
-            ),
+            transform=Compose(transforms),
         )
 
         if params.labels:
-            reformatted_video_paths = [(path, {"label": label}) for path, label in zip(params.video_paths, params.labels)]
+            reformatted_video_paths = [(path, {"label": label, "video_path": path}) for path, label in zip(params.video_paths, params.labels)]
         else:
-            reformatted_video_paths = [(path, {}) for path in params.video_paths]
+            reformatted_video_paths = [(path, {"video_path": path}) for path in params.video_paths]
 
         dataset = pytorchvideo.data.LabeledVideoDataset(
             labeled_video_paths=reformatted_video_paths,
@@ -61,7 +66,6 @@ class PytorchDataloader(DataLoader):
             video_sampler=torch.utils.data.SequentialSampler,
             transform=dataset_transform,
             decode_audio=False,
-            decoder="decord",
             **params.pytorch_dataset_kwargs
         )
 
@@ -78,7 +82,7 @@ class PytorchDataloader(DataLoader):
         inputs = batch["video"].to(device)
 
         if "labels" in batch:
-            return {"frames": inputs, "labels": batch["labels"]}
+            return {"frames": inputs, "labels": batch["labels"], "video_path": batch["video_path"]}
         
-        return {"frames": inputs}
+        return {"frames": inputs, "video_path": batch["video_path"]}
 

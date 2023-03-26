@@ -79,7 +79,24 @@ class ComboDataLoader(DataLoader):
         dali_additional_transform: Optional[Callable] = None,
     ):
         """
-        TODO: docs
+        Constructs a combined dataloader.
+
+        Arguments:
+        dataloaders: a list of dataloader types to create subprocesses for
+        dataloader_portions: list of integers representing the portion of videos
+        to allocate to each dataloader; length must be equal to `dataloaders` length
+        video_paths: paths of the videos to load
+        labels: labels associated with videos in video_paths, must have same length
+        as video_paths if provided
+        transform: transform to apply to each clip
+        stride: distance between consecutive frames in the clip
+        step: frame interval between each clip
+        sequence_length: frames to load per clip
+        batch_size: the number of clips returned in a batch
+        pytorch_dataloader_kwargs: keyword arguments to pass to torch Dataloader constructor
+        pytorch_dataset_kwargs: keyword arguments to pass to LabeledVideoDataset constructor
+        dali_pipeline_kwargs: keyword arguments to pass to DALI pipeline_def function call
+        dali_reader_kwargs: keyword arguments to pass to fn.readers.video_resize
         """
 
         if len(dataloaders) != len(dataloader_portions) or len([num for num in dataloader_portions if num < 0]) > 0 or sum(dataloader_portions) == 0:
@@ -140,10 +157,10 @@ class ComboDataLoader(DataLoader):
                         sequence_length=sequence_length,
                         fps=fps,
                         stride=stride,
-                        step=step,
+                        step=step if step >= 0 else sequence_length,
                         batch_size=batch_size,
                         labels=labels if not labels else labels[video_range.start:video_range.end],
-                        transform=transform,
+                        transform=transform if transform else ComboDLTransform(),
                         pytorch_dataloader_kwargs=pytorch_dataloader_kwargs,
                         pytorch_dataset_kwargs=pytorch_dataset_kwargs,
                         pytorch_additional_transform=pytorch_additional_transform,
