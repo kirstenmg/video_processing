@@ -37,6 +37,7 @@ def create_pipeline(params: DataLoaderParams):
         filenames=params.video_paths,
         labels=list(range(len(params.video_paths))),
         name='reader',
+        interp_type=types.INTERP_NN,
         **params.dali_reader_kwargs,
     )
 
@@ -78,7 +79,7 @@ class DaliDataLoader(DataLoader):
         
         dali_iter = DALIGenericIterator(
             pipeline,
-            ['frames', 'vid', 'frame_timestamp'],
+            ['frames', 'label', 'frame_timestamp'],
             last_batch_policy=LastBatchPolicy.PARTIAL,
             reader_name='reader'
         )
@@ -86,5 +87,6 @@ class DaliDataLoader(DataLoader):
         self._iterator = iter(dali_iter)
 
     def __next__(self):
-        batch = next(self._iterator)
-        return batch[0]
+        batch = next(self._iterator)[0]
+        batch["label"] = batch["label"].squeeze()
+        return batch

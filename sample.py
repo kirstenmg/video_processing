@@ -25,8 +25,8 @@ def main():
   )
 
   dl = ComboDataLoader(
-    dataloaders=[DataLoaderType.PYTORCH],
-    dataloader_portions=[1],
+    dataloaders=[DataLoaderType.DALI, DataLoaderType.PYTORCH],
+    dataloader_portions=[1, 1],
     video_paths=video_paths,
     transform=transform,
     stride=2,
@@ -34,6 +34,7 @@ def main():
     sequence_length=16,
     fps=32,
     batch_size=8,
+    pytorch_dataset_kwargs=dict(decoder="decord", short_side_scale=128),
     pytorch_dataloader_kwargs={"num_workers": 10},
     dali_pipeline_kwargs={"num_threads": 10}
   )
@@ -51,7 +52,6 @@ def main():
   for k, v in kinetics_classnames.items():
       kinetics_id_to_classname[v] = str(k).replace('"', "")
 
-  
   perf_start = time.perf_counter()
   for batch in dl:
     pass

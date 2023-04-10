@@ -5,7 +5,7 @@ from pytorchvideo.transforms import (
     ApplyTransformToKey,
     ShortSideScale,
     UniformTemporalSubsample,
-    Normalize
+    Normalize,
 )
 from ._dataloader import DataLoader, DataLoaderParams
 
@@ -81,8 +81,9 @@ class PytorchDataloader(DataLoader):
         batch = next(self._iter)
         inputs = batch["video"].to(device)
 
-        if "labels" in batch:
-            return {"frames": inputs, "labels": batch["labels"], "video_path": batch["video_path"]}
+        if "label" in batch:
+            print(batch["label"])
+            return {"frames": inputs, "label": batch["label"], "video_path": batch["video_path"]}
         
         return {"frames": inputs, "video_path": batch["video_path"]}
 
