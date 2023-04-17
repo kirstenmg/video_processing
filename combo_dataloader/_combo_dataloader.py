@@ -4,9 +4,11 @@ Dataloader that uses a producer/consumer model to parallelize multiple dataloade
 
 from typing import List, Dict, Any, Optional, Callable
 from collections import namedtuple
-from torch import multiprocessing
+from dataclasses import dataclass
 import enum
+import threading
 import atexit
+from torch import multiprocessing
 from ._dataloader import DataLoader, DataLoaderParams
 from ._transform import ComboDLTransform
 from ._dali_dataloader import DaliDataLoader
@@ -23,12 +25,62 @@ class DataLoaderType(enum.Enum):
     PYTORCH = enum.auto()
 
 
+# Events that can be sent to the dataloader run process
+@dataclass
+class ShutdownEvent():
+    """
+    The subthread populating the queue with batches should stop, without restarting
+    """
+    pass
+
+@dataclass 
+class StartEvent():
+    """
+    Start a thread to populate the given `batch_queue`with batches, after stopping
+    the current subthread if one is running
+    """
+    pass
+
+def run_dataloader(
+        dataloader: DataLoaderType,
+        params: DataLoaderParams,
+        event_queue,
+    ) -> None:
+        # On restart event, restart iteration for dataloader
+        thread = None
+        shutdown_communicator = threading.Event()
+
+        # Event queue
+        event = event_queue.get()
+        while event is not ShutdownEvent:
+            if event is StartEvent:
+                # end current subthread
+                if thread:
+                    shutdown_communicator.set()
+                    thread.join()
+
+                # start new subthread
+                thread = threading.Thread(
+                    target=populate_queue, name=dataloader.name, args=(
+                    dataloader, params, event.batch_queue, shutdown_communicator,
+                ))
+
+                # restart iteration
+                thread.start()
+
+            event = event_queue.get()
+
+        # clean up subthread
+        if thread:
+            shutdown_communicator.set()
+            thread.join()
+
+
 def populate_queue(
         dataloader: DataLoaderType,
-        queue,
-        lock,
-        shutdown_event,
         params: DataLoaderParams,
+        queue,
+        break_iteration_event,
     ) -> None:
     """
     Load batches of data and add them to the queue
@@ -37,13 +89,14 @@ def populate_queue(
     clip_count = 0
 
     if len(params.video_paths) > 0:
+        # TODO: is it possible to avoid re-construction?
         if dataloader == DataLoaderType.DALI:
             dl = DaliDataLoader(params)
         elif dataloader == DataLoaderType.PYTORCH:
             dl = PytorchDataloader(params)
 
         for batch in dl:
-            if shutdown_event.is_set():
+            if break_iteration_event.is_set():
                 break
 
             clip_count += len(batch["frames"])
@@ -51,10 +104,6 @@ def populate_queue(
             queue.put(batch)
 
     queue.put("done")
-
-    # Block until shutdown (hacky)
-    lock.acquire()
-    lock.release()
 
 
 class ComboDataLoader(DataLoader):
@@ -139,54 +188,81 @@ class ComboDataLoader(DataLoader):
         video_ranges[-1] = StartEnd(video_ranges[-1].start, len(video_paths))
 
         ctx = multiprocessing.get_context('spawn')
-        self._batch_queue = ctx.Queue(MAX_QUEUE_SIZE)  # stores Dict[str, Tensor]
+        self._ctx = ctx
+        self._event_queue = ctx.Queue()
         self._lock = ctx.Lock()
         self._lock.acquire()
-        self._shutdown_event = ctx.Event()
 
+        self._dataloaders = dataloaders
+        self._params = [
+            DataLoaderParams(
+                video_paths=video_paths[video_range.start:video_range.end],
+                sequence_length=sequence_length,
+                fps=fps,
+                stride=stride,
+                step=step if step >= 0 else sequence_length,
+                batch_size=batch_size,
+                labels=labels if not labels else labels[video_range.start:video_range.end],
+                transform=transform if transform else ComboDLTransform(),
+                pytorch_dataloader_kwargs=pytorch_dataloader_kwargs,
+                pytorch_dataset_kwargs=pytorch_dataset_kwargs,
+                pytorch_additional_transform=pytorch_additional_transform,
+                dali_pipeline_kwargs=dali_pipeline_kwargs,
+                dali_reader_kwargs=dali_reader_kwargs,
+                dali_additional_transform=dali_additional_transform,
+            )
+            for video_range in video_ranges
+        ]
+
+
+    def __iter__(self):
+        # Send start event to each process to start (or restart) queue population
+        for event_queue in self._event_queues:
+            event_queue.put(StartEvent(batch_queue))
+
+        # Instantiate new iterator
+        return _ComboDataloaderIterator(self._dataloaders, self._params, self._ctx)
+
+def _ComboDataloaderIterator():
+    def __init__(self, dataloader_types, dataloader_params, multiprocessing_context):
+        self._batch_queue = multiprocessing_context.Queue(MAX_QUEUE_SIZE) # stores Dict[str, Tensor]
+        self._done_count = len(dataloader_types)
+
+        # Create separate event queues for each process to ensure delivery
+        # of each event to each dataloader
+        self._event_queues = [multiprocessing_context.Queue() for dl in dataloader_types]
+
+        # Create processes for each dataloader
         self._dl_processes = [
-            ctx.Process(
-                target=populate_queue,
+            multiprocessing_context.Process(
+                target=run_dataloader,
                 args=(
-                    dataloader, 
-                    self._batch_queue,
-                    self._lock,
-                    self._shutdown_event,
-                    DataLoaderParams(
-                        video_paths=video_paths[video_range.start:video_range.end],
-                        sequence_length=sequence_length,
-                        fps=fps,
-                        stride=stride,
-                        step=step if step >= 0 else sequence_length,
-                        batch_size=batch_size,
-                        labels=labels if not labels else labels[video_range.start:video_range.end],
-                        transform=transform if transform else ComboDLTransform(),
-                        pytorch_dataloader_kwargs=pytorch_dataloader_kwargs,
-                        pytorch_dataset_kwargs=pytorch_dataset_kwargs,
-                        pytorch_additional_transform=pytorch_additional_transform,
-                        dali_pipeline_kwargs=dali_pipeline_kwargs,
-                        dali_reader_kwargs=dali_reader_kwargs,
-                        dali_additional_transform=dali_additional_transform,
-                    )
+                    dataloader,
+                    params,
+                    event_queue,
                 ),
                 daemon=(dataloader == DataLoaderType.DALI)
             )
-            for video_range, dataloader in zip(video_ranges, dataloaders)
+            for dataloader, params, event_queue in zip(dataloader_types, dataloader_params, self._event_queues)
         ]
 
-        self._done_count = len(dataloaders)
+        for queue in self._event_queues:
+            queue.put(StartEvent())
+
 
     def __next__(self):
         """
-        Return the next batch of inputs. Tensor input is stored under the "video"
-        key of the result dictionary.
+        Return the next batch of inputs. Tensor input is stored under the "frames"
+        key of the result dictionary; labels under the "label" key.
         NOTE: may add labels to the output in the future.
         """
-
+        # Start the dataloader processes if not already
+        # They will not start populating the queue until a "start" event is sent
         if not self._started:
+            self._started = True
             for t in self._dl_processes:
                 t.start()
-            self._started = True
+
 
         # Return next item in queue, blocking
         next_item = self._batch_queue.get();
@@ -203,7 +279,8 @@ class ComboDataLoader(DataLoader):
         return next_item
 
     def shutdown(self):
-        if not self._shutdown_event.is_set():
-            self._shutdown_event.set()
-            self._lock.release()
+        # Send shutdown event to each process
+        for event_queue in self._event_queues:
+            event_queue.put(ShutdownEvent())
+
 
