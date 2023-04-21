@@ -12,7 +12,7 @@ from ._dataloader import DataLoader, DataLoaderParams
 
 device="cuda"
 
-class PytorchDataloader(DataLoader):
+class PytorchDataLoader(DataLoader):
     def __init__(
         self,
         params: DataLoaderParams
@@ -75,15 +75,30 @@ class PytorchDataloader(DataLoader):
             **params.pytorch_dataloader_kwargs
         )
 
-        self._iter = iter(dataloader)
+        self._dataloader = dataloader
+
+    def __iter__(self):
+        return _PytorchIter(iter(self._dataloader))
+
+
+class _PytorchIter():
+    def __init__(self, dataloader_iter):
+        self._iter = dataloader_iter
+
+    def __iter__(self):
+        return self
 
     def __next__(self):
         batch = next(self._iter)
         inputs = batch["video"].to(device)
 
         if "label" in batch:
-            print(batch["label"])
             return {"frames": inputs, "label": batch["label"], "video_path": batch["video_path"]}
         
-        return {"frames": inputs, "video_path": batch["video_path"]}
+        batch["frames"] = inputs
+        del batch["video"]
+        
+        return batch
+
+
 

@@ -6,13 +6,12 @@ from typing import List, Dict, Any, Optional, Callable
 from collections import namedtuple
 from dataclasses import dataclass
 import enum
-import threading
 import atexit
 from torch import multiprocessing
 from ._dataloader import DataLoader, DataLoaderParams
 from ._transform import ComboDLTransform
 from ._dali_dataloader import DaliDataLoader
-from ._pytorch_dataloader import PytorchDataloader
+from ._pytorch_dataloader import PytorchDataLoader
 
 
 # Maximum size of producer/consumer queue of batches
@@ -26,59 +25,38 @@ class DataLoaderType(enum.Enum):
 
 
 # Events that can be sent to the dataloader run process
-@dataclass
-class ShutdownEvent():
-    """
-    The subthread populating the queue with batches should stop, without restarting
-    """
-    pass
+START_EVENT = "start"
+SHUTDOWN_EVENT = "shutdown"
 
-@dataclass 
-class StartEvent():
-    """
-    Start a thread to populate the given `batch_queue`with batches, after stopping
-    the current subthread if one is running
-    """
-    pass
+# Indicator that worker is done processing all batches
+DONE = "done"
 
 def run_dataloader(
         dataloader: DataLoaderType,
         params: DataLoaderParams,
+        batch_queue,
         event_queue,
+        break_iteration_event,
     ) -> None:
-        # On restart event, restart iteration for dataloader
-        thread = None
-        shutdown_communicator = threading.Event()
+        if len(params.video_paths) <= 0:
+            return
 
-        # Event queue
+        if dataloader == DataLoaderType.DALI:
+            dl = DaliDataLoader(params)
+        elif dataloader == DataLoaderType.PYTORCH:
+            dl = PytorchDataLoader(params)
+
+        # TODO: what if populators are never started?
         event = event_queue.get()
-        while event is not ShutdownEvent:
-            if event is StartEvent:
-                # end current subthread
-                if thread:
-                    shutdown_communicator.set()
-                    thread.join()
-
-                # start new subthread
-                thread = threading.Thread(
-                    target=populate_queue, name=dataloader.name, args=(
-                    dataloader, params, event.batch_queue, shutdown_communicator,
-                ))
-
-                # restart iteration
-                thread.start()
+        while event != SHUTDOWN_EVENT:
+            if event == START_EVENT:
+                populate_queue(dl, batch_queue, break_iteration_event)
 
             event = event_queue.get()
 
-        # clean up subthread
-        if thread:
-            shutdown_communicator.set()
-            thread.join()
-
 
 def populate_queue(
-        dataloader: DataLoaderType,
-        params: DataLoaderParams,
+        dataloader,
         queue,
         break_iteration_event,
     ) -> None:
@@ -86,24 +64,17 @@ def populate_queue(
     Load batches of data and add them to the queue
     """
 
-    clip_count = 0
+    print("starting population")
+    for batch in dataloader:
+        if break_iteration_event.is_set():
+            print("break")
+            break
+        
+        print("batch", end = "")
+        queue.put(batch)
 
-    if len(params.video_paths) > 0:
-        # TODO: is it possible to avoid re-construction?
-        if dataloader == DataLoaderType.DALI:
-            dl = DaliDataLoader(params)
-        elif dataloader == DataLoaderType.PYTORCH:
-            dl = PytorchDataloader(params)
-
-        for batch in dl:
-            if break_iteration_event.is_set():
-                break
-
-            clip_count += len(batch["frames"])
-
-            queue.put(batch)
-
-    queue.put("done")
+    print()
+    queue.put(DONE)
 
 
 class ComboDataLoader(DataLoader):
@@ -168,12 +139,6 @@ class ComboDataLoader(DataLoader):
             dali_reader_kwargs = dict()
 
         
-        # Still shut down in case of early termination
-        atexit.register(self.shutdown)
-
-        # For lazy starting of dataloader processes
-        self._started = False
-
         # Split up video paths
         StartEnd = namedtuple("StartEnd", ["start", "end"])
 
@@ -193,6 +158,8 @@ class ComboDataLoader(DataLoader):
         self._lock = ctx.Lock()
         self._lock.acquire()
 
+        # Set up dataloaders and params for iterator
+        self._iterator = None
         self._dataloaders = dataloaders
         self._params = [
             DataLoaderParams(
@@ -216,21 +183,25 @@ class ComboDataLoader(DataLoader):
 
 
     def __iter__(self):
-        # Send start event to each process to start (or restart) queue population
-        for event_queue in self._event_queues:
-            event_queue.put(StartEvent(batch_queue))
+        if not self._iterator:
+            # Instantiate new iterator
+            self._iterator = _ComboDataLoaderIterator(self._dataloaders, self._params, self._ctx)
+        else:
+            # Reuse existing iterator
+            self._iterator._restart()
 
-        # Instantiate new iterator
-        return _ComboDataloaderIterator(self._dataloaders, self._params, self._ctx)
+        return self._iterator
 
-def _ComboDataloaderIterator():
+class _ComboDataLoaderIterator():
     def __init__(self, dataloader_types, dataloader_params, multiprocessing_context):
         self._batch_queue = multiprocessing_context.Queue(MAX_QUEUE_SIZE) # stores Dict[str, Tensor]
-        self._done_count = len(dataloader_types)
+        self._unfinished_count = len(dataloader_types)
 
         # Create separate event queues for each process to ensure delivery
         # of each event to each dataloader
         self._event_queues = [multiprocessing_context.Queue() for dl in dataloader_types]
+        self._break_iteration_event = multiprocessing_context.Event();
+        self._break_iteration_event.clear()
 
         # Create processes for each dataloader
         self._dl_processes = [
@@ -239,38 +210,63 @@ def _ComboDataloaderIterator():
                 args=(
                     dataloader,
                     params,
+                    self._batch_queue,
                     event_queue,
+                    self._break_iteration_event,
                 ),
                 daemon=(dataloader == DataLoaderType.DALI)
             )
             for dataloader, params, event_queue in zip(dataloader_types, dataloader_params, self._event_queues)
         ]
 
-        for queue in self._event_queues:
-            queue.put(StartEvent())
+        # Still shutdown in case of early exit
+        atexit.register(self.shutdown)
 
+        for t in self._dl_processes:
+            t.start()
+
+        # TODO: could also do this lazily, in __next__. Consult torch for ref.
+        # Restart subprocess iteration
+        for event_queue in self._event_queues:
+            event_queue.put(START_EVENT)
+
+    def __iter__(self):
+        return self
+
+    def __del__(self):
+        self.shutdown()
+
+    def _restart(self):
+        # Break iteration of unfinished subprocesses and wait for them to finish
+        if self._unfinished_count:
+            self._break_iteration_event.set()
+
+            while self._unfinished_count:
+                next_item = self._batch_queue.get()
+                if next_item == "done":
+                    self._unfinished_count -= 1
+
+            self._break_iteration_event.clear()
+
+        self._unfinished_count = len(self._dl_processes)
+
+        # Restart subprocess iteration
+        for event_queue in self._event_queues:
+            event_queue.put(START_EVENT)
 
     def __next__(self):
         """
         Return the next batch of inputs. Tensor input is stored under the "frames"
         key of the result dictionary; labels under the "label" key.
-        NOTE: may add labels to the output in the future.
         """
-        # Start the dataloader processes if not already
-        # They will not start populating the queue until a "start" event is sent
-        if not self._started:
-            self._started = True
-            for t in self._dl_processes:
-                t.start()
-
 
         # Return next item in queue, blocking
         next_item = self._batch_queue.get();
 
-        while next_item == "done":
+        while next_item == DONE:
             # Decrement count and check if all sub-dataloaders are done
-            self._done_count -= 1
-            if self._done_count == 0:
+            self._unfinished_count -= 1
+            if self._unfinished_count == 0:
                 assert self._batch_queue.empty()
                 raise StopIteration
             else:
@@ -280,7 +276,8 @@ def _ComboDataloaderIterator():
 
     def shutdown(self):
         # Send shutdown event to each process
+        self._break_iteration_event.set()
         for event_queue in self._event_queues:
-            event_queue.put(ShutdownEvent())
+            event_queue.put(SHUTDOWN_EVENT)
 
 

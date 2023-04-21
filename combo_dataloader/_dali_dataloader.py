@@ -84,7 +84,18 @@ class DaliDataLoader(DataLoader):
             reader_name='reader'
         )
 
-        self._iterator = iter(dali_iter)
+        self._dataloader = dali_iter
+
+    def __iter__(self):
+        return _DaliIter(iter(self._dataloader))
+
+
+class _DaliIter():
+    def __init__(self, dataloader_iter):
+        self._iterator = dataloader_iter
+
+    def __iter__(self):
+        return self
 
     def __next__(self):
         batch = next(self._iterator)[0]
