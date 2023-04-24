@@ -1,4 +1,6 @@
 from combo_dataloader import ComboDataLoader, ComboDLTransform, DataLoaderType
+from combo_dataloader._dataloader import DataLoaderParams
+from combo_dataloader._pytorch_dataloader import PytorchDataLoader
 import torchvision
 import json
 import torch
@@ -24,10 +26,31 @@ def main():
     short_side_scale=128
   )
 
+
+  params = DataLoaderParams(
+    video_paths=video_paths[:10],
+    labels=None,
+    transform=transform,
+    stride=2,
+    step=32,
+    sequence_length=16,
+    fps=32,
+    batch_size=8,
+    pytorch_dataset_kwargs=dict(decoder="decord", short_side_scale=128),
+    pytorch_additional_transform=None,
+    dali_additional_transform=None,
+    pytorch_dataloader_kwargs={"num_workers": 10},
+    dali_pipeline_kwargs={"num_threads": 10},
+    dali_reader_kwargs=None,
+  )
+
+  pydl = PytorchDataLoader(params)
+
   dl = ComboDataLoader(
     dataloaders=[DataLoaderType.DALI, DataLoaderType.PYTORCH],
     dataloader_portions=[1, 1],
-    video_paths=video_paths,
+    video_paths=video_paths[:10],
+    labels=[i for i in enumerate(video_paths[:10])],
     transform=transform,
     stride=2,
     step=32,
@@ -52,9 +75,16 @@ def main():
   for k, v in kinetics_classnames.items():
       kinetics_id_to_classname[v] = str(k).replace('"', "")
 
-  perf_start = time.perf_counter()
+  batches = 0
+  itr = iter(dl)
+  for batch in itr:
+    batches += 1
+  print(batches)
+
   for batch in dl:
-    pass
+    batches += 1
+  print(batches)
+
     # preds = model(batch["frames"])
     # # Get the predicted classes
     # post_act = torch.nn.Softmax(dim=1)
@@ -65,7 +95,6 @@ def main():
     # pred_class_names = [kinetics_id_to_classname[int(i)] for i in pred_classes[0]]
     # print("Predicted labels: %s" % ", ".join(pred_class_names))
   
-  print(time.perf_counter() - perf_start)
 
 
 if __name__ == '__main__':

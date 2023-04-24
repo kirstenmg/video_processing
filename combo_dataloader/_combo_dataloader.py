@@ -64,16 +64,12 @@ def populate_queue(
     Load batches of data and add them to the queue
     """
 
-    print("starting population")
     for batch in dataloader:
         if break_iteration_event.is_set():
-            print("break")
             break
         
-        print("batch", end = "")
         queue.put(batch)
 
-    print()
     queue.put(DONE)
 
 

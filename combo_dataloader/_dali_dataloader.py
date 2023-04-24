@@ -99,5 +99,5 @@ class _DaliIter():
 
     def __next__(self):
         batch = next(self._iterator)[0]
-        batch["label"] = batch["label"].squeeze()
+        batch["label"] = batch["label"].squeeze().tolist()
         return batch
