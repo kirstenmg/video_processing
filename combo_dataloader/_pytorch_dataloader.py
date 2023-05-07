@@ -92,9 +92,6 @@ class _PytorchIter():
         batch = next(self._iter)
         inputs = batch["video"].to(device)
 
-        if "label" in batch:
-            return {"frames": inputs, "label": batch["label"], "video_path": batch["video_path"]}
-        
         batch["frames"] = inputs
         del batch["video"]
         

@@ -19,7 +19,7 @@ def create_pipeline(params: DataLoaderParams):
     if params.transform.short_side_scale:
         resize_args["resize_shorter"] = params.transform.short_side_scale
 
-    frames, label, timestamp = fn.readers.video_resize(
+    frames, label = fn.readers.video_resize(
         **resize_args,
         device=device,
         sequence_length=params.sequence_length, # Frames to load per sequence
@@ -33,9 +33,8 @@ def create_pipeline(params: DataLoaderParams):
         pad_last_batch=False,
         dont_use_mmap=True,
         skip_vfr_check=True,
-        enable_timestamps=True,
         filenames=params.video_paths,
-        labels=list(range(len(params.video_paths))),
+        labels=params.labels,
         name='reader',
         interp_type=types.INTERP_NN,
         **params.dali_reader_kwargs,
@@ -99,5 +98,5 @@ class _DaliIter():
 
     def __next__(self):
         batch = next(self._iterator)[0]
-        batch["label"] = batch["label"].squeeze().tolist()
+        batch["label"] = batch["label"].squeeze()
         return batch
