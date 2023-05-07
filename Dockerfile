@@ -1,8 +1,7 @@
-FROM pytorch/pytorch
+FROM pytorch/pytorch:1.13.0-cuda11.6-cudnn8-runtime
 COPY requirements.txt requirements.txt
 RUN python --version
-RUN apt-get update &&
-    apt-get install -y git
+RUN apt-get update && apt-get install -y git
 RUN python -m pip install -r requirements.txt
 RUN python --version
 RUN pip install opencv-python-headless==4.7.0.72
