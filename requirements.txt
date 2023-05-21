@@ -1,3 +1,4 @@
-pytorchvideo==0.1.5
-duckdb==0.6.1
-torch-tb-profiler==0.4.0
+--extra-index-url https://developer.download.nvidia.com/compute/redist
+git+https://github.com/kirstenmg/pytorchvideo.git
+nvidia-dali-cuda110==1.19.0
+decord==0.6.0
