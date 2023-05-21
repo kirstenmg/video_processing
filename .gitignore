@@ -6,3 +6,5 @@ benchmark_results
 *.duckdb
 *.duckdb.wal
 *.egg-info
+examples/lightning_logs
+examples/lightning_logs
