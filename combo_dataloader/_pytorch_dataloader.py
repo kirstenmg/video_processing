@@ -57,7 +57,6 @@ class PytorchDataLoader(DataLoader):
 
         dataset = pytorchvideo.data.LabeledVideoDataset(
             labeled_video_paths=reformatted_video_paths,
-            # TODO: adjust correctly
             clip_sampler=pytorchvideo.data.make_clip_sampler(
                 "uniform",
                 params.stride * params.sequence_length / params.fps,
@@ -94,7 +93,7 @@ class _PytorchIter():
 
         batch["frames"] = inputs
         del batch["video"]
-        
+
         return batch
 
 

@@ -16,7 +16,7 @@ from ._pytorch_dataloader import PytorchDataLoader
 
 
 # Maximum size of producer/consumer queue of batches
-MAX_QUEUE_SIZE = 50
+MAX_QUEUE_SIZE = 10
 
 # Time until we check if a child process is still alive
 QUEUE_TIMEOUT = 10
