@@ -89,7 +89,12 @@ class _PytorchIter():
 
     def __next__(self):
         batch = next(self._iter)
-        inputs = batch["video"].to(device)
+        inputs = batch["video"]
+
+        if batch is torch.Tensor:
+            inputs = batch["video"].to(device)
+        elif batch is list:
+            inputs = [x.to(device) for x in batch["video"]]
 
         batch["frames"] = inputs
         del batch["video"]
