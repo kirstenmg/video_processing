@@ -6,15 +6,17 @@ It runs a separate producer subprocess for each base dataloader, allowing better
 
 ## Getting started
 
-Two sample notebooks with example usage are included:
+First, install the `combo_dataloader` module: `python setup.py`
 
-`train_demo.ipynb`: demonstrates how to use the `ComboDataloader` in a video labeling train-test pipeline.
+Several (quite similar) sample notebooks with example usage are included:
 
 `speedup_demo.ipynb`: demonstrates the speedup of applying different optimizations to the `ComboDataloader`, and how to set up an optimal configuration.
 
-To be able to use the resize pushdown optimization when using `decord` as the
-PyTorch backend, use [this fork](https://github.com/kirstenmg/pytorchvideo) of
-`pytorchvideo`. If using the provided Dockerfile, you may first need to uninstall the existing installation of `pytorchvideo` (`pip uninstall pytorchvideo`) before installing the forked module.
+`train_demo.ipynb`: demonstrates how to use the `ComboDataloader` in a video labeling train-test pipeline.
+
+`train_speedup.ipynb`: demonstrates the speedup with the same configurations as in `speedup_demo.ipynb`, but in running a training pipeline rather than just dataloading.
+
+`model_zoo.ipynb`: demonstrates using the `ComboDataloader` in pipelines with a few different models.
 
 ## Setting up Docker
 
@@ -23,3 +25,21 @@ To build the Docker image from the provided `Dockerfile`, run `docker build -t <
 
 To use a GPU in the Docker container, make sure to pass `--runtime=nvidia`, `--ipc=host`,
 and `--gpus '"capabilities=compute,utility,video"'` to `docker create`.
+
+Creating the container:
+```
+docker create --name="container name"
+	-v path/to/video_processing:/path/to/video_processing/in/container
+	-v path/to/dataset:path/to/dataset/in/container:ro
+	-i -t
+	--runtime=nvidia --ipc=host --gpus'"capabilities=compute,utility,video"'
+	<image name>
+```
+
+Starting the container:
+```
+docker start <container name>
+```
+
+Note that DALI does not support Python 3.10.
+
