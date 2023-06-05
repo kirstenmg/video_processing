@@ -206,6 +206,15 @@ class ComboDataLoader(DataLoader):
 
         return self._iterator
 
+    def shutdown(self):
+        """
+        Shut down the dataloading processes created during iteration.
+        """
+        if self._iterator:
+            self._iterator.shutdown()
+            self._iterator = None
+
+
 class _ComboDataLoaderIterator():
     def __init__(self, dataloader_types, dataloader_params, multiprocessing_context):
         self._batch_queue = multiprocessing_context.Queue(MAX_QUEUE_SIZE) # stores Dict[str, Tensor]
